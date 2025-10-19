@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Image from 'next/image';
 
 type Message = {
   role: string;
   content: string;
+  image?: string;
 };
 
 type Chat = {
@@ -42,8 +44,11 @@ export default function Home() {
   const [chatHistory, setChatHistory] = useState<Chat[]>([]);
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -107,6 +112,28 @@ export default function Home() {
     setShowHistory(false);
   };
 
+  // Handle image selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Remove selected image
+  const removeImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   const playAudio = async (text: string) => {
     if (!audioEnabled || !text) return;
     
@@ -133,8 +160,62 @@ export default function Home() {
   };
 
   const sendMessage = async () => {
-    if (!input.trim() || loading) return;
+    if ((!input.trim() && !selectedImage) || loading) return;
     
+    // Handle image analysis
+    if (selectedImage) {
+      const userMessage: Message = { 
+        role: 'user', 
+        content: input.trim() || 'What Stoic wisdom can you share about this image?',
+        image: imagePreview || undefined
+      };
+      
+      setMessages(prev => [...prev, userMessage]);
+      setInput('');
+      setLoading(true);
+
+      try {
+        const formData = new FormData();
+        formData.append('image', selectedImage);
+        formData.append('prompt', input.trim());
+
+        const res = await fetch('/api/analyze-image', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!res.ok) throw new Error('Failed to analyze image');
+
+        const data = await res.json();
+        
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: data.analysis 
+        }]);
+
+        setLoading(false);
+        removeImage();
+
+        // Auto-save after AI responds
+        setTimeout(() => saveCurrentChat(), 500);
+
+        if (audioEnabled && data.analysis) {
+          await playAudio(data.analysis);
+        }
+
+      } catch (error) {
+        console.error('Error:', error);
+        setLoading(false);
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: 'Sorry, I encountered an error analyzing the image. Please try again.' 
+        }]);
+        removeImage();
+      }
+      return;
+    }
+    
+    // Regular text message (existing functionality)
     const userMessage: Message = { role: 'user', content: input };
     setMessages(prev => [...prev, userMessage]);
     setInput('');
@@ -203,7 +284,6 @@ export default function Home() {
       recorder.onstop = async () => {
         const audioBlob = new Blob(chunks, { type: 'audio/webm' });
         
-        // Send to Gemini for transcription
         const formData = new FormData();
         formData.append('audio', audioBlob);
         
@@ -225,7 +305,6 @@ export default function Home() {
           alert('Failed to transcribe audio. Please try again.');
         }
         
-        // Stop all tracks
         stream.getTracks().forEach(track => track.stop());
         setIsRecording(false);
       };
@@ -589,7 +668,7 @@ export default function Home() {
             <p className={`mb-6 leading-relaxed font-medium ${
               theme === 'space' ? 'text-gray-200' : 'text-gray-700'
             }`}>
-              I channel the wisdom of Marcus Aurelius, Epictetus, and Seneca to guide you through life&apos;s challenges with Stoic philosophy.
+              I channel the wisdom of Marcus Aurelius, Epictetus, and Seneca to guide you through life&apos;s challenges with Stoic philosophy. You can also share images for visual Stoic wisdom!
             </p>
             <p className={`text-sm mb-4 font-semibold ${
               theme === 'space' ? 'text-gray-300' : 'text-gray-600'
@@ -632,6 +711,17 @@ export default function Home() {
                   ? 'bg-slate-900/90 text-white border border-indigo-400/40 backdrop-blur-xl'
                   : 'bg-white/95 text-gray-800 border-2 border-[#d4a574]'
               }`}>
+                {msg.image && (
+                  <div className="mb-3">
+                    <Image 
+                      src={msg.image} 
+                      alt="User uploaded" 
+                      width={300}
+                      height={200}
+                      className="rounded-xl"
+                    />
+                  </div>
+                )}
                 <div className="whitespace-pre-wrap break-words font-medium leading-relaxed">
                   {msg.content}
                 </div>
@@ -667,6 +757,38 @@ export default function Home() {
           <div ref={chatEndRef} />
         </div>
         
+        {/* Image Preview */}
+        {imagePreview && (
+          <div className={`rounded-2xl p-4 mb-3 shadow-lg backdrop-blur-md border relative ${
+            theme === 'space'
+              ? 'bg-white/10 border-purple-400/40'
+              : 'bg-white/80 border-[#d4a574]'
+          }`}>
+            <button
+              onClick={removeImage}
+              className={`absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center font-bold transition shadow-lg ${
+                theme === 'space'
+                  ? 'bg-purple-500/90 hover:bg-purple-600 text-white'
+                  : 'bg-[#c89860]/90 hover:bg-[#b8805f] text-white'
+              }`}
+            >
+              ×
+            </button>
+            <Image 
+              src={imagePreview} 
+              alt="Preview" 
+              width={200}
+              height={150}
+              className="rounded-xl"
+            />
+            <p className={`text-xs mt-2 font-medium ${
+              theme === 'space' ? 'text-purple-300' : 'text-[#8b6f47]'
+            }`}>
+              Image ready - Phil will analyze when you send
+            </p>
+          </div>
+        )}
+        
         {/* Input */}
         <div className="flex gap-3">
           <div className="flex-1 flex gap-2">
@@ -674,7 +796,7 @@ export default function Home() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-              placeholder={isRecording ? "Listening..." : "Share what's on your mind..."}
+              placeholder={isRecording ? "Listening..." : selectedImage ? "Ask about the image..." : "Share what's on your mind..."}
               className={`flex-1 p-5 rounded-2xl backdrop-blur-md outline-none shadow-lg font-medium transition border ${
                 theme === 'space'
                   ? 'bg-white/10 text-white placeholder-gray-400 border-white/20 focus:border-purple-400'
@@ -682,6 +804,35 @@ export default function Home() {
               } ${isRecording ? 'animate-pulse' : ''}`}
               disabled={loading || isRecording}
             />
+            
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageSelect}
+              className="hidden"
+            />
+            
+            {/* Image Upload Button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={loading || isRecording}
+              className={`px-6 rounded-2xl transition font-bold shadow-xl hover:scale-105 ${
+                selectedImage
+                  ? theme === 'space'
+                    ? 'bg-purple-600/90 text-white border-2 border-purple-400'
+                    : 'bg-[#c89860]/90 text-white border-2 border-[#a8805f]'
+                  : theme === 'space'
+                  ? 'bg-white/10 backdrop-blur-xl text-white border border-white/20 hover:bg-white/20'
+                  : 'bg-white/70 text-[#8b6f47] border border-[#e8d4bf] hover:bg-white/90'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title="Upload an image for Phil to analyze"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+            </button>
             
             {/* Microphone Button */}
             <button
@@ -707,7 +858,7 @@ export default function Home() {
           
           <button
             onClick={sendMessage}
-            disabled={loading || !input.trim()}
+            disabled={loading || (!input.trim() && !selectedImage)}
             className={`px-6 md:px-10 py-3 md:py-5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition font-bold shadow-xl hover:scale-105 ${
               theme === 'space'
                 ? 'bg-purple-600 hover:bg-purple-500 text-white'
