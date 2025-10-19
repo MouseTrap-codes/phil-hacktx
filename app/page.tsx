@@ -547,7 +547,7 @@ export default function Home() {
                   : 'bg-white/70 text-[#8b6f47] hover:bg-white/90 border border-[#e8d4bf]'
               }`}
             >
-              History
+              Chat History
             </button>
             
             <button
@@ -708,7 +708,7 @@ export default function Home() {
           <button
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className={`px-10 py-5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition font-bold shadow-xl hover:scale-105 ${
+            className={`px-6 md:px-10 py-3 md:py-5 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed transition font-bold shadow-xl hover:scale-105 ${
               theme === 'space'
                 ? 'bg-purple-600 hover:bg-purple-500 text-white'
                 : 'bg-[#c89860] hover:bg-[#b8805f] text-white'
