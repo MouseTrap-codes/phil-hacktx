@@ -7,6 +7,13 @@ type Message = {
   content: string;
 };
 
+type Chat = {
+  id: string;
+  title: string;
+  messages: Message[];
+  timestamp: number;
+};
+
 type Theme = 'space' | 'ancient';
 
 export default function Home() {
@@ -15,13 +22,90 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [theme, setTheme] = useState<Theme>('space');
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('phil-theme');
+      if (savedTheme === 'space' || savedTheme === 'ancient') {
+        return savedTheme;
+      }
+    }
+    return 'space';
+  });
+
+  // Save theme to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('phil-theme', theme);
+  }, [theme]);
+  
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [chatHistory, setChatHistory] = useState<Chat[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Load chat history from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('phil-chat-history');
+    if (saved) {
+      setChatHistory(JSON.parse(saved));
+    }
+  }, []);
+
+  // Save current chat
+  const saveCurrentChat = () => {
+    if (messages.length === 0) return;
+    
+    const chatId = currentChatId || `chat-${Date.now()}`;
+    const title = messages[0]?.content.slice(0, 50) || 'New conversation';
+    
+    const chat: Chat = {
+      id: chatId,
+      title,
+      messages,
+      timestamp: Date.now()
+    };
+    
+    const updatedHistory = chatHistory.filter(c => c.id !== chatId);
+    updatedHistory.unshift(chat);
+    
+    setChatHistory(updatedHistory);
+    localStorage.setItem('phil-chat-history', JSON.stringify(updatedHistory));
+    setCurrentChatId(chatId);
+  };
+
+  // Load a chat
+  const loadChat = (chat: Chat) => {
+    setMessages(chat.messages);
+    setCurrentChatId(chat.id);
+    setShowHistory(false);
+  };
+
+  // Delete a chat
+  const deleteChat = (chatId: string) => {
+    const updatedHistory = chatHistory.filter(c => c.id !== chatId);
+    setChatHistory(updatedHistory);
+    localStorage.setItem('phil-chat-history', JSON.stringify(updatedHistory));
+    
+    if (currentChatId === chatId) {
+      startNewChat();
+    }
+  };
+
+  // Start new chat
+  const startNewChat = () => {
+    if (messages.length > 0) {
+      saveCurrentChat();
+    }
+    setMessages([]);
+    setCurrentChatId(null);
+    setShowHistory(false);
+  };
 
   const playAudio = async (text: string) => {
     if (!audioEnabled || !text) return;
@@ -87,6 +171,9 @@ export default function Home() {
       
       setLoading(false);
       
+      // Auto-save after AI responds
+      setTimeout(() => saveCurrentChat(), 500);
+      
       if (audioEnabled && aiMessage) {
         await playAudio(aiMessage);
       }
@@ -101,11 +188,76 @@ export default function Home() {
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+      
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunks, { type: 'audio/webm' });
+        
+        // Send to Gemini for transcription
+        const formData = new FormData();
+        formData.append('audio', audioBlob);
+        
+        try {
+          const res = await fetch('/api/speech-to-text', {
+            method: 'POST',
+            body: formData
+          });
+          
+          const data = await res.json();
+          
+          if (data.transcription) {
+            setInput(data.transcription);
+          } else {
+            alert('Could not transcribe audio. Please try again.');
+          }
+        } catch (error) {
+          console.error('Transcription error:', error);
+          alert('Failed to transcribe audio. Please try again.');
+        }
+        
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+        setIsRecording(false);
+      };
+      
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Microphone access error:', error);
+      alert('Could not access microphone. Please grant permission.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
   const examplePrompts = [
-    "I'm feeling overwhelmed with work",
-    "How do I deal with anxiety?",
-    "I'm struggling with a difficult decision",
-    "How can I be more resilient?"
+    "I'm stressed about my upcoming finals",
+    "Everyone seems to have it figured out but me",
+    "I'm burned out from constant studying",
+    "I'm unsure about my major and career path"
   ];
 
   return (
@@ -284,6 +436,93 @@ export default function Home() {
 
       {/* Main Content */}
       <div className="relative z-10 max-w-4xl mx-auto p-4 md:p-8">
+        
+        {/* Chat History Sidebar */}
+        {showHistory && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex" onClick={() => setShowHistory(false)}>
+            <div 
+              className={`w-80 h-full overflow-y-auto shadow-2xl p-6 ${
+                theme === 'space' 
+                  ? 'bg-[#0a0118] border-r border-white/10' 
+                  : 'bg-[#faf6f0] border-r border-[#e8d4bf]'
+              }`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className={`text-2xl font-bold ${
+                  theme === 'space' ? 'text-white' : 'text-[#8b6f47]'
+                }`}>
+                  Chat History
+                </h2>
+                <button
+                  onClick={() => setShowHistory(false)}
+                  className={`text-2xl ${
+                    theme === 'space' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-[#8b6f47]'
+                  }`}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <button
+                onClick={startNewChat}
+                className={`w-full p-3 rounded-xl mb-4 font-semibold transition ${
+                  theme === 'space'
+                    ? 'bg-purple-600 hover:bg-purple-500 text-white'
+                    : 'bg-[#c89860] hover:bg-[#b8805f] text-white'
+                }`}
+              >
+                + New Chat
+              </button>
+              
+              {chatHistory.length === 0 ? (
+                <p className={`text-center text-sm ${
+                  theme === 'space' ? 'text-gray-400' : 'text-gray-500'
+                }`}>
+                  No saved conversations yet
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {chatHistory.map((chat) => (
+                    <div
+                      key={chat.id}
+                      className={`p-3 rounded-xl cursor-pointer transition group ${
+                        theme === 'space'
+                          ? 'bg-white/5 hover:bg-white/10 border border-white/10'
+                          : 'bg-white/60 hover:bg-white/80 border border-[#e8d4bf]'
+                      } ${currentChatId === chat.id ? (theme === 'space' ? 'ring-2 ring-purple-400' : 'ring-2 ring-[#c89860]') : ''}`}
+                    >
+                      <div onClick={() => loadChat(chat)}>
+                        <p className={`text-sm font-medium truncate ${
+                          theme === 'space' ? 'text-white' : 'text-[#8b6f47]'
+                        }`}>
+                          {chat.title}
+                        </p>
+                        <p className={`text-xs mt-1 ${
+                          theme === 'space' ? 'text-gray-400' : 'text-gray-500'
+                        }`}>
+                          {new Date(chat.timestamp).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteChat(chat.id);
+                        }}
+                        className={`mt-2 text-xs opacity-0 group-hover:opacity-100 transition ${
+                          theme === 'space' ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-[#8b6f47]'
+                        }`}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
           <div>
@@ -300,6 +539,17 @@ export default function Home() {
           </div>
           
           <div className="flex gap-3">
+            <button
+              onClick={() => setShowHistory(true)}
+              className={`px-6 py-3 rounded-2xl transition font-semibold shadow-lg hover:scale-105 ${
+                theme === 'space'
+                  ? 'bg-white/10 backdrop-blur-xl text-white border border-white/20 hover:bg-white/20'
+                  : 'bg-white/70 text-[#8b6f47] hover:bg-white/90 border border-[#e8d4bf]'
+              }`}
+            >
+              History
+            </button>
+            
             <button
               onClick={() => setTheme(theme === 'space' ? 'ancient' : 'space')}
               className={`px-6 py-3 rounded-2xl transition font-semibold shadow-lg hover:scale-105 ${
@@ -379,7 +629,7 @@ export default function Home() {
                     ? 'bg-purple-500/80 text-white border border-purple-400/50'
                     : 'bg-[#8b6f47] text-white border border-[#a8805f]'
                   : theme === 'space'
-                  ? 'bg-white/90 text-gray-800 border border-white/20'
+                  ? 'bg-slate-900/90 text-white border border-indigo-400/40 backdrop-blur-xl'
                   : 'bg-white/95 text-gray-800 border-2 border-[#d4a574]'
               }`}>
                 <div className="whitespace-pre-wrap break-words font-medium leading-relaxed">
@@ -419,18 +669,42 @@ export default function Home() {
         
         {/* Input */}
         <div className="flex gap-3">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="Share what's on your mind..."
-            className={`flex-1 p-5 rounded-2xl backdrop-blur-md outline-none shadow-lg font-medium transition border ${
-              theme === 'space'
-                ? 'bg-white/10 text-white placeholder-gray-400 border-white/20 focus:border-purple-400'
-                : 'bg-white/70 text-gray-800 placeholder-gray-500 border-[#e8d4bf] focus:border-[#d4a574]'
-            }`}
-            disabled={loading}
-          />
+          <div className="flex-1 flex gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              placeholder={isRecording ? "Listening..." : "Share what's on your mind..."}
+              className={`flex-1 p-5 rounded-2xl backdrop-blur-md outline-none shadow-lg font-medium transition border ${
+                theme === 'space'
+                  ? 'bg-white/10 text-white placeholder-gray-400 border-white/20 focus:border-purple-400'
+                  : 'bg-white/70 text-gray-800 placeholder-gray-500 border-[#e8d4bf] focus:border-[#d4a574]'
+              } ${isRecording ? 'animate-pulse' : ''}`}
+              disabled={loading || isRecording}
+            />
+            
+            {/* Microphone Button */}
+            <button
+              onClick={toggleRecording}
+              disabled={loading}
+              className={`px-6 rounded-2xl transition font-bold shadow-xl hover:scale-105 relative overflow-hidden ${
+                isRecording
+                  ? theme === 'space'
+                    ? 'bg-purple-600/90 text-white border-2 border-purple-400'
+                    : 'bg-[#c89860]/90 text-white border-2 border-[#a8805f]'
+                  : theme === 'space'
+                  ? 'bg-white/10 backdrop-blur-xl text-white border border-white/20 hover:bg-white/20'
+                  : 'bg-white/70 text-[#8b6f47] border border-[#e8d4bf] hover:bg-white/90'
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
+              title={isRecording ? "Click to stop recording" : "Click to record your question"}
+            >
+              {isRecording && (
+                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer"></span>
+              )}
+              <span className="relative">{isRecording ? 'Stop' : 'Speak'}</span>
+            </button>
+          </div>
+          
           <button
             onClick={sendMessage}
             disabled={loading || !input.trim()}
@@ -487,6 +761,10 @@ export default function Home() {
           from { opacity: 0; transform: translateY(20px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
         .animate-twinkle {
           animation: twinkle 4s ease-in-out infinite;
         }
@@ -507,6 +785,9 @@ export default function Home() {
         }
         .animate-fade-in {
           animation: fade-in 0.6s ease-out;
+        }
+        .animate-shimmer {
+          animation: shimmer 1.5s ease-in-out infinite;
         }
       `}</style>
     </div>
