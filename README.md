@@ -1,36 +1,109 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Phil - AI-Powered Stoic Philosopher 🏛️
+
+Your personal Stoic philosopher for student mental health. Phil combines ancient wisdom with modern AI to provide personalized guidance through stress, anxiety, and life's challenges.
+
+Built for HackTX 2025
+
+## Features
+
+- **RAG-Powered Responses** - Retrieves from 1000+ embedded Stoic texts via Pinecone
+- **Multi-Modal Input** - Text, voice, and vision analysis
+- **Natural Voice Output** - ElevenLabs text-to-speech
+- **Dual Themes** - Ancient Greek & Cosmic Space aesthetics
+- **Real-Time Streaming** - Responses appear as they're generated
+- **Privacy-First** - No login, no tracking, local storage only
+
+## Tech Stack
+
+- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
+- **AI Services**: Google Gemini (Text, Vision, Embeddings), ElevenLabs (TTS)
+- **Vector DB**: Pinecone Serverless
+- **Deployment**: Vercel
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+- Node.js 18+
+- API Keys:
+  - [Google AI Studio](https://makersuite.google.com/app/apikey) (Gemini)
+  - [Pinecone](https://www.pinecone.io/) (Vector DB)
+  - [ElevenLabs](https://elevenlabs.io/) (Voice)
+
+### Installation
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Clone the repository
+git clone https://github.com/[your-username]/phil-stoic-ai.git
+cd phil-stoic-ai
+
+# Install dependencies
+npm install
+
+# Create .env.local file
+cp .env.example .env.local
+# Add your API keys to .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Variables
+```env
+GEMINI_API_KEY=your_google_ai_studio_key
+PINECONE_API_KEY=your_pinecone_key
+PINECONE_INDEX_NAME=your_index_name
+ELEVENLABS_API_KEY=your_elevenlabs_key
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Run Development Server
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000)
 
-## Learn More
+## 📁 Project Structure
+```
+phil-stoic-ai/
+├── app/
+│   ├── api/
+│   │   ├── chat/              # RAG-powered chat endpoint
+│   │   ├── analyze-image/     # Gemini Vision analysis
+│   │   ├── audio/             # Text-to-speech
+│   │   └── speech-to-text/    # Voice transcription
+│   ├── page.tsx               # Main chat interface
+│   └── layout.tsx
+├── public/
+└── package.json
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 🎯 How It Works
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **User Input** - Text, voice, or image
+2. **Embedding Generation** - Convert query to 768-dim vector
+3. **Vector Search** - Find top 3 relevant Stoic passages (Pinecone)
+4. **Context Injection** - Add passages to Gemini prompt
+5. **Response Generation** - Stream personalized Stoic wisdom
+6. **Voice Output** -  ElevenLabs TTS
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Awards & Recognition
 
-## Deploy on Vercel
+- HackTX 2025 Submission
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📝 License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT
+
+## 🙏 Acknowledgments
+
+- Google for Gemini API
+- Pinecone for vector database
+- ElevenLabs for voice synthesis
+- Marcus Aurelius, Epictetus, and Seneca for the wisdom
+
+---
+
+**Live Demo**: phil-hacktx2025.vercel.app 
+**DevPost**: https://devpost.com/software/phil-x3erld
+**Demo Video**: https://youtu.be/G8_7mKYN03U 
+
+Live demo will be disabled after hackathon.
+
+Built by Pranav Battini.
